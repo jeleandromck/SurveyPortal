@@ -120,6 +120,88 @@ else:
 
 
 
+
+
+
+###########################################################
+st.write("## Comparativo entre bancos")
+
+bancosPorPrincipalidade = df['banco_principal'].value_counts().index.tolist()
+
+listaBancos  = st.multiselect(
+        "Filtre os bancos para o estudo",
+        bancosPorPrincipalidade,
+        bancosPorPrincipalidade[0],
+        )
+
+df_consolidado = (
+    df_products
+    .pivot_table(
+        index='banco',
+        columns='produto',
+        values='id',
+        aggfunc='nunique',
+        fill_value=0,
+    )
+    .apply(lambda x:x/x.sum(), axis=1)
+    .T
+)
+
+# st.dataframe(df_consolidado[listaBancos])
+
+with chart_container(df_consolidado[listaBancos]):
+    cutoff = st.slider('Top%', 0.0, 1.0, 0.0,0.01)
+
+    temp = df_consolidado[listaBancos].sort_values(listaBancos, ascending=[False]*len(listaBancos))
+    temp = temp.query(" and ".join([f"{col} > {cutoff}" for col in listaBancos]))
+
+    fig = px.bar(
+        temp.reset_index(),
+        x="produto",
+        y=listaBancos,
+        barmode='group',
+    )
+    fig.update_layout(legend=dict(
+        orientation="h",
+        yanchor="bottom",
+        y=-1,
+        x=-0
+    ))
+    st.plotly_chart(fig, use_container_width=True)
+
+
+
+st.markdown('## quem está mais concentrado por produto versus a média')
+
+listaProdutos  = st.selectbox(
+        "Selecione o produto",
+        df_consolidado.index,
+        0,
+        )
+
+posicao_relativa = (df_consolidado.T/df_consolidado.T.median(axis=0)).T -1
+posicao_relativa = posicao_relativa.query('produto == @listaProdutos')
+posicao_relativa = posicao_relativa.T.sort_values(listaProdutos, ascending=False)
+
+# #bar chart
+# st.write(posicao_relativa.reset_index())
+with chart_container(posicao_relativa):
+
+    fig = px.bar(
+        posicao_relativa.reset_index(),
+        x="banco",
+        y=listaProdutos,
+        barmode='group',
+    )
+    fig.update_layout(legend=dict(
+        orientation="h",
+        yanchor="bottom",
+        y=-1,
+        x=-0
+    ))
+    st.plotly_chart(fig, use_container_width=True)
+
+
 ##################################################################################################################
 st.write('## Análise de cesta - via cluster de banco por produto')
 
@@ -235,48 +317,6 @@ with chart_container(df_cesta_banco):
         orientation="h",
         yanchor="bottom",
         y=-0.5,
-        x=-0
-    ))
-    st.plotly_chart(fig, use_container_width=True)
-
-
-###########################################################
-st.write("## Comparativo entre bancos")
-
-bancosPorPrincipalidade = df['banco_principal'].value_counts().index.tolist()
-
-listaBancos  = st.multiselect(
-        "Filtre os bancos para o estudo",
-        bancosPorPrincipalidade,
-        bancosPorPrincipalidade[0],
-        )
-
-df_consolidado = (
-    df_products
-    .pivot_table(
-        index='banco',
-        columns='produto',
-        values='id',
-        aggfunc='nunique',
-        fill_value=0,
-    )
-    .apply(lambda x:x/x.sum(), axis=1)
-    .T
-)
-
-# st.dataframe(df_consolidado[listaBancos])
-
-with chart_container(df_consolidado[listaBancos]):
-    fig = px.bar(
-        df_consolidado[listaBancos].reset_index(),
-        x="produto",
-        y=listaBancos,
-        barmode='group',
-    )
-    fig.update_layout(legend=dict(
-        orientation="h",
-        yanchor="bottom",
-        y=-1,
         x=-0
     ))
     st.plotly_chart(fig, use_container_width=True)
