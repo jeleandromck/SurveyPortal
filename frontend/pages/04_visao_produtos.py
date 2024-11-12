@@ -119,7 +119,41 @@ else:
     st.write("Nenhum registro foi selecionado. O filtro será ignorado")
 
 
+## temp
 
+trainingSet = (
+    df_products.pivot_table(index='id', columns='produto', values='banco', aggfunc='nunique', fill_value=0)
+    .merge(df[['id','default']], on='id')
+    .assign(default=lambda x:(x['default']=='Sim').astype(int))
+    .drop('id',axis=1)
+)
+
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+
+clf = RandomForestClassifier(n_estimators=100, random_state=42)
+clf = LogisticRegression(random_state=42)
+clf.fit(trainingSet.drop('default', axis=1), trainingSet['default'])
+
+
+featureImportance = pd.DataFrame({
+    'features':clf.feature_names_in_,
+    # 'importance':clf.feature_importances_,
+    'importance':clf.coef_.flatten(),
+})
+
+st.write("## Produtos mais importantes para prever inadimplência")
+# st.write(featureImportance.sort_values('importance', ascending=False))
+
+fig = px.bar(
+    featureImportance.sort_values('importance', ascending=False),
+    x='features',
+    y='importance',
+    title='Feature Importance',
+    labels={'importance': 'Importance', 'features': 'Features'}
+)
+fig.update_layout(xaxis_tickangle=-45)
+st.plotly_chart(fig, use_container_width=True)
 
 
 

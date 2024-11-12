@@ -33,7 +33,7 @@ metricChoice = ''
 
 with st.sidebar:
     st.write('## Escolha um banco')
-    chosenBank = st.selectbox("Banco", bancos_principais, np.random.randint(0,len(bancos_principais)))
+    chosenBank = st.selectbox("Banco", bancos_principais)
 
     st.write('## Opções dos gráficos')
     sortingChoice = st.selectbox("Ordenação",("Mesma dos dados", "Quantidade"),)
@@ -114,6 +114,8 @@ def createMetrics(df, chosenBank):
         - **Principalidade**: Percentual de pessoas que escolheram o banco como principal
         - **Publico Jovem**: Percentual de pessoas com idade até 35 anos
         - **Publico Feminino**: Percentual de pessoas do sexo feminino
+        - **Concentração Sudeste**: Percentual de pessoas da região sudeste
+        - **Emprego Tempo Integral**: Percentual de pessoas empregadas em tempo integral
                  
         As setas indicam a razao entre o indicador do banco dividido pelo mesmo indicador dos demais bancos.
         
