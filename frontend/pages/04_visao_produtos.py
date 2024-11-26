@@ -18,7 +18,7 @@ sys.path.append('..')
 
 import constants
 import pandas_utils
-from data_model import categoricals_demographics, load_survey_core, load_product_bank
+from data_model import categoricals_demographics, load_survey_core, load_product_bank, load_nps_questions
 
 
 ################## Page config
@@ -27,8 +27,16 @@ st.set_page_config(layout="wide")
 
 ############## Data loading
 df = load_survey_core()
-
 df_products = load_product_bank()
+df_nps = load_nps_questions()
+
+df_indice_digital = (
+    df_nps.query('pergunta == "consigo_contratar_100digital"')
+    .assign(digitalizacao = lambda x:x['nps'].str.lower().isin(['concordo','concordo totalmente']).astype(int))
+    [['id','digitalizacao']]
+)
+
+df = pd.merge(df, df_indice_digital, on='id', how='left').fillna({'digitalizacao':0})
 
 ############## Side Bar
 
@@ -123,39 +131,72 @@ else:
 
 trainingSet = (
     df_products.pivot_table(index='id', columns='produto', values='banco', aggfunc='nunique', fill_value=0)
-    .merge(df[['id','default']], on='id')
+    .merge(df[['id','default','digitalizacao']], on='id')
     .assign(default=lambda x:(x['default']=='Sim').astype(int))
     .drop('id',axis=1)
 )
 
+
+
+st.write("## Produtos com mais impacto na inadimplência e digitalização")
+
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
-
-clf = RandomForestClassifier(n_estimators=100, random_state=42)
-clf = LogisticRegression(random_state=42)
-clf.fit(trainingSet.drop('default', axis=1), trainingSet['default'])
+from sklearn.linear_model import LogisticRegression, LogisticRegressionCV
 
 
-featureImportance = pd.DataFrame({
-    'features':clf.feature_names_in_,
+# clf_default = RandomForestClassifier(n_estimators=100, random_state=42)
+clf_default = LogisticRegressionCV(random_state=42, Cs=10)
+clf_default.fit(trainingSet.drop(['default','digitalizacao'], axis=1), trainingSet['default'])
+
+featureImportanceDefault = pd.DataFrame({
+    'features':clf_default.feature_names_in_,
     # 'importance':clf.feature_importances_,
-    'importance':clf.coef_.flatten(),
+    'importance':np.round(clf_default.coef_.flatten(),4),
+    'color':np.where(clf_default.coef_.flatten()>0, 'Mais inadimplente', 'Menos inadimplente')
 })
 
-st.write("## Produtos mais importantes para prever inadimplência")
-# st.write(featureImportance.sort_values('importance', ascending=False))
 
-fig = px.bar(
-    featureImportance.sort_values('importance', ascending=False),
-    x='features',
-    y='importance',
-    title='Feature Importance',
-    labels={'importance': 'Importance', 'features': 'Features'}
-)
-fig.update_layout(xaxis_tickangle=-45)
-st.plotly_chart(fig, use_container_width=True)
+clf_digitalizacao = LogisticRegressionCV(random_state=42, Cs=1)
+clf_digitalizacao.fit(trainingSet.drop(['default','digitalizacao'], axis=1), trainingSet['digitalizacao'])
+
+featureImportanceDigital = pd.DataFrame({
+    'features':clf_digitalizacao.feature_names_in_,
+    # 'importance':clf.feature_importances_,
+    'importance':np.round(clf_digitalizacao.coef_.flatten(),4),
+    'color':np.where(clf_digitalizacao.coef_.flatten()>0, 'Mais digital', 'Menos digital')
+})
 
 
+
+cols = st.columns(2)
+
+with cols[0]:
+    fig = px.bar(
+        featureImportanceDefault.sort_values('importance', ascending=False),
+        y='features',
+        x='importance',
+        title='Produtos com mais impacto na inadimplência',
+        labels={'importance': 'Importance', 'features': 'Features'},
+        color='color',
+        color_discrete_map={'Mais inadimplente':'red','Menos inadimplente':'blue'},
+        orientation='h'
+    )
+    fig.update_layout(xaxis_tickangle=-45)
+    st.plotly_chart(fig, use_container_width=True)
+
+with cols[1]:
+    fig = px.bar(
+        featureImportanceDigital.sort_values('importance', ascending=False),
+        y='features',
+        x='importance',
+        title='Produtos com mais impacto na digitalização',
+        labels={'importance': 'Importance', 'features': 'Features'},
+        color='color',
+        color_discrete_map={'Menos digital':'red','Mais digital':'blue'},
+        orientation='h'
+    )
+    fig.update_layout(xaxis_tickangle=-45)
+    st.plotly_chart(fig, use_container_width=True)
 
 ###########################################################
 st.write("## Comparativo entre bancos")

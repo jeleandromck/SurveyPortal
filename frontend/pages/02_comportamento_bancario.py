@@ -15,35 +15,46 @@ import pandas_utils
 from data_model import categoricals_demographics, load_survey_core, load_know_bank, load_nps_questions, load_ranking_questions
 
 
-################## Page config
+
+
+################## Page config ########################################################################
 st.set_page_config(layout="wide")
 
-df = load_survey_core()
-df_rankings = load_ranking_questions()
+
+################## Data loading ########################################################################
+df_core_full = load_survey_core()
+df_nps_full = load_nps_questions()
+df_rankings_full = load_ranking_questions()
 
 
-# conhece_banco
+categoria_bancos = ['Todos']+constants.CATEG_BANK_CATEG.categories.tolist()
 
-if st.sidebar.button("Clear All"):
-    # Clear values from *all* all in-memory and on-disk data caches:
-    # i.e. clear values from both square and cube
-    st.cache_data.clear()
 
-############################################################################################################## 
-# Visao questões do tipo NPS
-st.title("Comportamento bancário")
+
+################## side bar ########################################################################
 
 with st.sidebar:
-    bancos_principais = ['']+df['banco_principal'].value_counts().index.values.tolist()
-    chosenBank = ''
+    st.write("## Escolha uma categoria");
+    selected_banco_categ = st.selectbox("Categoria", categoria_bancos, 0)
+
+    df_core_categ = df_core_full;
+    if selected_banco_categ != 'Todos':
+        df_core_categ = df_core_full.query('agrupamento_bancos in (@selected_banco_categ)')
+
+
     st.write('## Escolha um banco')
-    chosenBank = st.selectbox("Banco", bancos_principais, 0)
+    bancos_principais = ['Todos']+df_core_categ['banco_principal'].value_counts().to_frame().query('count >0').index.tolist()
+    selected_banco = st.selectbox("Banco", bancos_principais, 0)
 
-    if chosenBank != '':
-        df = df.query('banco_principal == @chosenBank')
+    if selected_banco != 'Todos':
+        df_core = df_core_categ.query('banco_principal == @selected_banco')
+    else:
+        df_core = df_core_categ
 
+    if len(df_core) < 10:
+        st.write("Nenhum dado encontrado para a seleção. Considere mudar o filtro.")
+        st.stop()
 
-        
 
     st.write('## Opções dos gráficos')
     sortingChoice = st.selectbox("Ordenação",("Mesma dos dados", "Quantidade"),)
@@ -52,76 +63,87 @@ with st.sidebar:
         cutoff = st.slider('Top%', 0.0, 1.0, 1.0,0.05)
     row_len = st.slider('Quantidade de colunas por linha', 1, 4, 2)
 
+#st.write(len(df_core_full), len(df_core_categ), len(df_core))
+
+df_nps_full = df_nps_full.merge(df_core_full[['id','agrupamento_bancos','banco_principal']], on='id', how='inner')
+nps_categ = df_nps_full.merge(df_core_categ[['id']], on='id', how='inner')
+nps_core = df_nps_full.merge(df_core[['id']], on='id', how='inner')
 
 
+df_rankings_full = df_rankings_full.merge(df_core_full[['id','agrupamento_bancos','banco_principal']], on='id', how='inner')
+df_rankings_categ = df_rankings_full.merge(df_core_categ[['id']], on='id', how='inner')
+df_rankings_core = df_rankings_full.merge(df_core[['id']], on='id', how='inner')
+
+############ Main Page  ########################################################################
+
+############################################################################################################## 
+# Visao questões do tipo NPS
+st.title(f"Comportamento bancário {' - '+selected_banco if selected_banco != 'Todos' else ''}")
 
 
+if len(df_core) == 0:
+    st.write("Nenhum dado encontrado para a seleção. Considere mudar o filtro.")
+    st.stop()
+
+st.write(f" Os resultados abaixo foram preenchidos com  {len(df_core)} - {len(df_core)/len(df_core_full):0.1%} respondentes selecionados")
 
 
-
-with st.expander("Filtros"):
-    filtroNPSIncome  = st.multiselect(
-        "Selecione a faixa de renda",
-        constants.CATEG_INCOME_RANGE.categories,
-        constants.CATEG_INCOME_RANGE.categories.tolist(),
-        )
-    
-    filtroNPSEducation  = st.multiselect(
-        "Selecione o nível educacional",
-        constants.CATEG_EDUCATION.categories,
-        constants.CATEG_EDUCATION.categories.tolist(),
-        )
-    
-    cols = st.columns(3)
-
-    filtroNPSGenero  = cols[0].multiselect(
-        "Selecione genero",
-        ['Feminino','Masculino'],
-        ['Feminino','Masculino'],
-        )
-    
-    filtroNPSRegiao  = cols[1].multiselect(
-        "Selecione regiao",
-        constants.CATEG_REGIAO.categories,
-        constants.CATEG_REGIAO.categories.tolist(),
-        )
-    filtroNPSAge  = cols[2].multiselect(
-        "Selecione as faixa de idade",
-        constants.CATEG_AGE.categories,
-        constants.CATEG_AGE.categories.tolist(),
-        )
-
-    df_filter = df.copy()
-
-    if len(filtroNPSGenero) < 2:
-        df_filter = df_filter.query(f"genero in {filtroNPSGenero}")
-
-    if len(filtroNPSEducation) != len(constants.CATEG_EDUCATION.categories):
-        df_filter = df_filter.query(f"escolaridade in {filtroNPSEducation}")
-
-    if len(filtroNPSIncome) != len(constants.CATEG_INCOME_RANGE.categories):
-        df_filter = df_filter.query(f"faixa_renda in {filtroNPSIncome}")
-
-    if len(filtroNPSRegiao) != len(constants.CATEG_REGIAO.categories):
-        df_filter = df_filter.query(f"regiao in {filtroNPSRegiao}")
+bank_categ_selected = st.multiselect("Escolha os agrupamentos de bancos",categoria_bancos,)
 
 
-    if len(filtroNPSAge) != len(constants.CATEG_AGE.categories):
-        df_filter = df_filter.query(f"faixa_idade in {filtroNPSAge}")
+############ Charts functions  ########################################################################
+class RowProducer:
+    def __init__(self, row_len) -> None:
+        self.row_len = row_len;
+        self.row = row = st.columns(row_len);
+        self.index = 0;
+        pass
+    def getNext(self):
+        if self.index == row_len:
+            row = st.columns(row_len)
+            self.index=0
+        
+        theRow = self.row[self.index];
+        self.index+=1
+        return theRow
+        
 
-    st.write(f"{len(df_filter)/len(df):0.1%} respondentes selecionados")
+def nps_chart(cel_container, df, x, y, title):
+    if type(y) == str:
+        y = [y]
 
-df_nps = load_nps_questions()
+    with cel_container:
+        with chart_container(df):
+            st.write(f"### {title.replace('_',' ').title()}")
+            fig = make_subplots() 
+            for c in y:
+                fig.add_trace(go.Scatter(
+                    y=df[x],
+                    x=df[c], 
+                    name=c.replace("_"," ").title(),
+                    # text=[f"{v:.1%}" for v in df[c]],
+                    textposition="top center",
+                    # line_color="blue",
+                    mode="text+lines"))
+            
+            fig.update_layout(
+                legend=dict(orientation="h",yanchor="bottom",y=-1.02,x=-1),
+                xaxis_range=[0,1],
+                # title_text=f"{title.title().replace('_', ' ')}"
+            )
+            st.plotly_chart(fig, use_container_width=True)
 
-df_nps = df_nps.merge(df_filter[['id']],on='id', how='inner')
-
-def nps_chart(cel_container, categ, df, x, y):
+def ranking_chart(cel_container, categ, df, x, y):
     with cel_container:
         with chart_container(df):
             fig = px.line(df,y=y,x=x,title=f"{categ.replace('_', ' ').title()}",)
             fig.update_layout(legend=dict(orientation="h",yanchor="bottom",y=-1.02,x=-1))
             fig.update_layout(xaxis_range=[0,1])
             st.plotly_chart(fig, use_container_width=True)
+
+
+############ data summarization  ########################################################################
+
 
 def nps_filter(df, categ):
     df = (
@@ -156,10 +178,12 @@ def nps_filter(df, categ):
 
 
 def ranking_filter(df, categ):
+    
+    totals = df.groupby(['categoria']).agg(N=('id', 'nunique')).reset_index()
     df = (
         df
         .query(f'categoria == "{categ}"')
-        .assign(rank=lambda x:x['rank'].apply(lambda x:f'R{x:02d}'))
+        .assign(rank=lambda x:x['rank'].apply(lambda x:f'R{x:02d}')) # colunando pelo rank
         .pivot_table(
             index=['categoria', 'prioridade'],
             columns='rank',
@@ -167,73 +191,120 @@ def ranking_filter(df, categ):
             aggfunc='nunique',
         )
         .reset_index()
-        .merge(
-            df_rankings.groupby(['categoria']).agg(N=('id', 'nunique')).reset_index(),
-            on=['categoria']
-
-        )
+        .merge(totals,on=['categoria'])
     )
     df = (
-        df
-        .assign(pct_prioridade_1_e_2=df[['R01','R02']].sum(axis=1)/df['N'])
+        df.assign(pct_prioridade_1_e_2=df[['R01','R02']].sum(axis=1)/df['N'])
         [['prioridade','pct_prioridade_1_e_2']]
     )
 
     return df
 
 
-class RowProducer:
-    def __init__(self, row_len) -> None:
-        self.row_len = row_len;
-        self.row = row = st.columns(row_len);
-        self.index = 0;
-        pass
-    def getNext(self):
-        if self.index == row_len:
-            row = st.columns(row_len)
-            self.index=0
-        
-        theRow = self.row[self.index];
-        self.index+=1
-        return theRow
-        
-
-if len(df_nps) == 0 :
-    st.write("Nenhum dado encontrado para a seleção. Considere mudar o filtro.")
-
+###########################################################################################################################
 st.write('## Crédito e canais de contratação')
 
 layout = RowProducer(row_len=row_len)
-for categ in ['jornada_contratacao_credito_principal','atendimento_robo','planejamento_credito',  'capacidade_financeira']:
-    temp = nps_filter(df_nps, categ)
-    nps_chart(layout.getNext(), categ,temp, x='pct_concordancia', y="pergunta")
+for categ in ['jornada_contratacao_credito_principal', 'atendimento_robo','planejamento_credito',  'capacidade_financeira']:
+    # Banco atual
+    temp = nps_filter(nps_core, categ).rename(columns={'pct_concordancia':'pct_concordancia_'+selected_banco.lower()})
 
-for categ in [ 'canal_contratacao_prioridade','fator_escolher_banco_emprestimo']:
-    temp = ranking_filter(df_rankings, categ)
-    nps_chart(layout.getNext(), categ,temp, x='pct_prioridade_1_e_2', y="prioridade")
+    # adding categories
+    selected_columns = ['pct_concordancia_'+selected_banco.lower()];
+    for c in set(bank_categ_selected) - set([selected_banco]):
+        if c == 'Todos':
+            temp1 = nps_filter(df_nps_full, categ)
+        else:
+            temp1 = nps_filter(df_nps_full.query('agrupamento_bancos == @c'), categ)
+
+    
+        temp1 = temp1.rename(columns={'pct_concordancia':'pct_concordancia_'+c.lower()})
+        temp = temp.merge(temp1, on='pergunta', how='left')
+        selected_columns.append('pct_concordancia_'+c.lower())
+
+    nps_chart(layout.getNext(), temp, x='pergunta', y=selected_columns, title=categ)
 
 
-# 
-# displayBlock(df_nps, )
-
+###########################################################################################################################
 st.write('## Contratação de produtos')
 layout = RowProducer(row_len=row_len)
 for categ in ['cheque_especial','cartao_credito',    'crediario_digital', 'credito_parcelado']:
-    temp = nps_filter(df_nps, categ)
-    nps_chart(layout.getNext(), categ,temp, x='pct_concordancia', y="pergunta")
+    # Banco atual
+    temp = nps_filter(nps_core, categ).rename(columns={'pct_concordancia':'pct_concordancia_'+selected_banco.lower()})
 
+    # adding categories
+    selected_columns = ['pct_concordancia_'+selected_banco.lower()];
+    for c in set(bank_categ_selected) - set([selected_banco]):
+        if c == 'Todos':
+            temp1 = nps_filter(df_nps_full, categ)
+        else:
+            temp1 = nps_filter(df_nps_full.query('agrupamento_bancos == @c'), categ)
+
+    
+        temp1 = temp1.rename(columns={'pct_concordancia':'pct_concordancia_'+c.lower()})
+        temp = temp.merge(temp1, on='pergunta', how='left')
+        selected_columns.append('pct_concordancia_'+c.lower())
+
+    nps_chart(layout.getNext(), temp, x='pergunta', y=selected_columns, title=categ)
+
+
+# ###########################################################################################################################
 for categ in [ "fator_escolher_banco_emprestimo",'credito_parcelado_novo__importancia', "cartao_credito_novo__importancia", "credito_parcelado_novo__importancia"]:
-    temp = ranking_filter(df_rankings, categ)
-    nps_chart(layout.getNext(), categ,temp, x='pct_prioridade_1_e_2', y="prioridade")
+    temp = ranking_filter(df_rankings_core, categ)
+    selected_columns = ['pct_prioridade_1_e_2'];
+    for c in bank_categ_selected:
+        if c == 'Todos':
+            temp1 = ranking_filter(df_rankings_full, categ)
+        else:
+            temp1 = ranking_filter(df_rankings_full.query('agrupamento_bancos == @c'), categ)
+
+        temp1 = temp1.rename(columns={'pct_prioridade_1_e_2':'pct_prioridade_1_e_2_'+c.lower()})
+        temp = temp.merge(temp1, on='prioridade', how='left')
+        selected_columns.append('pct_prioridade_1_e_2_'+c.lower())
 
 
+    # st.write(temp)
+
+    nps_chart(layout.getNext(), temp, x='prioridade', y=selected_columns, title=categ)
+
+###########################################################################################################################
 st.write('## Inadimplência')
 layout = RowProducer(row_len=row_len)
 for categ in ['credito_negado', 'situacao_credito',   'endividamento', 'personalizacao_cobranca']:
-    temp = nps_filter(df_nps, categ)
-    nps_chart(layout.getNext(), categ,temp, x='pct_concordancia', y="pergunta")
+    # Banco atual
+    temp = nps_filter(nps_core, categ).rename(columns={'pct_concordancia':'pct_concordancia_'+selected_banco.lower()})
+
+    # adding categories
+    selected_columns = ['pct_concordancia_'+selected_banco.lower()];
+    for c in set(bank_categ_selected) - set([selected_banco]):
+        if c == 'Todos':
+            temp1 = nps_filter(df_nps_full, categ)
+        else:
+            temp1 = nps_filter(df_nps_full.query('agrupamento_bancos == @c'), categ)
+
+    
+        temp1 = temp1.rename(columns={'pct_concordancia':'pct_concordancia_'+c.lower()})
+        temp = temp.merge(temp1, on='pergunta', how='left')
+        selected_columns.append('pct_concordancia_'+c.lower())
+
+    nps_chart(layout.getNext(), temp, x='pergunta', y=selected_columns, title=categ)
 
 for categ in ['meio_pagamento_preferencial', 'prioridadePagamentoRank','melhorias_processo_cobranca'
-              ,'tipo_ofertas_renegociacao']:
-    temp = ranking_filter(df_rankings, categ)
-    nps_chart(layout.getNext(), categ,temp, x='pct_prioridade_1_e_2', y="prioridade")
+              ,'tipo_ofertas_renegociacao','inadimplencia__melhor_forma_de_saber']:
+
+    temp = ranking_filter(df_rankings_core, categ).rename(columns={'pct_prioridade_1_e_2':'pct_prioridade_1_e_2_'+selected_banco.lower()})
+    selected_columns = ['pct_prioridade_1_e_2_'+selected_banco.lower()];
+    for c in bank_categ_selected:
+        if c == 'Todos':
+            temp1 = ranking_filter(df_rankings_full, categ)
+        else:
+            temp1 = ranking_filter(df_rankings_full.query('agrupamento_bancos == @c'), categ)
+
+        temp1 = temp1.rename(columns={'pct_prioridade_1_e_2':'pct_prioridade_1_e_2_'+c.lower()})
+        temp = temp.merge(temp1, on='prioridade', how='left')
+        selected_columns.append('pct_prioridade_1_e_2_'+c.lower())
+
+
+    # st.write(temp)
+
+    nps_chart(layout.getNext(), temp, x='prioridade', y=selected_columns, title=categ)

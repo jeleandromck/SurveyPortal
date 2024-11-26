@@ -19,15 +19,14 @@ st.set_page_config(layout="wide")
 
 other_cols = ['ind_bancarizado','default','banco_principal']
 
+# ###############################Loading data####################################################################
 
-df = load_survey_core()
+
+df_core = load_survey_core()
 df_know = load_know_bank()
 
-if st.sidebar.button("Atualizar dados"):
-    st.cache_data.clear()
-
-##############################################################################################################
-bancos_principais = df['banco_principal'].value_counts().index.values
+# ##############################################################################################################
+bancos_principais = df_core['banco_principal'].value_counts().index.values
 chosenBank = ''
 metricChoice = ''
 
@@ -44,12 +43,15 @@ with st.sidebar:
         cutoff = st.slider('Top%', 0.0, 1.0, 1.0,0.05)
     row_len = st.slider('Quantidade de colunas por linha', 1, 4, 2)
 
+if st.sidebar.button("Atualizar dados"):
+    st.cache_data.clear()
 
+
+# ##############################################################################################################
 st.title(f"Visão do {chosenBank}")
 st.divider()
 
 
-##############################################################################################################
 st.write(f"## Métricas e insights")
 
 def createMetrics(df, chosenBank):
@@ -124,11 +126,11 @@ def createMetrics(df, chosenBank):
 
 
 
-createMetrics(df, chosenBank);
+createMetrics(df_core, chosenBank);
 
 st.divider()
 
-##############################################################################################################
+# ##############################################################################################################
 
 st.write(f"## Visão demografia comparada")
 chart_cols = st.multiselect(
@@ -137,7 +139,7 @@ chart_cols = st.multiselect(
     categoricals_demographics,
 )
 
-all_bank_groups = df['agrupamento_bancos'].value_counts().index.values
+all_bank_groups = df_core['agrupamento_bancos'].value_counts().index.values
 bank_cate_cols = st.multiselect(
     "Escolha os agrupamentos de bancos",
     all_bank_groups,
@@ -225,21 +227,21 @@ for column in chart_cols:
     col = row[col_count]
     col_count += 1
 
-    addChart(col,df,  column)
+    addChart(col,df_core,  column)
 
 
 
 
-st.divider()
+# st.divider()
 
-##############################################################################################################
+# ##############################################################################################################
 
-st.title("TODO: CRIAR VISAO PRODUTOS")
+# st.title("TODO: CRIAR VISAO PRODUTOS")
 
-st.write("""
-    - Quais produtos os clientes tem contratado
-    - Quais produtos os respondentes considerariam contratar (clientes x não clientes)
-    - Quais produtos que os clientes tem na concorrencia
-    - Quais produtos que os clientes inadimplentes possuem. 
-""")
+# st.write("""
+#     - Quais produtos os clientes tem contratado
+#     - Quais produtos os respondentes considerariam contratar (clientes x não clientes)
+#     - Quais produtos que os clientes tem na concorrencia
+#     - Quais produtos que os clientes inadimplentes possuem. 
+# """)
 
